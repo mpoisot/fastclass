@@ -42,7 +42,7 @@ class CustomDownloader(ImageDownloader, ImageLog):
         ImageLog.registry[task['filename']] = task['file_url']
 
 
-def crawl(folder: str, search: str, maxnum: int, crawlers: [List[str]] = ['GOOGLE', 'BING', 'BAIDU', 'FLICKR']) -> Dict[str, str]:
+def crawl(folder: str, search: str, maxnum: int, min_size: int, crawlers: [List[str]] = ['GOOGLE', 'BING', 'BAIDU', 'FLICKR']) -> Dict[str, str]:
     """Crawl web sites for images"""
     print('(1) Crawling ...')
     # prepare folders
@@ -52,52 +52,54 @@ def crawl(folder: str, search: str, maxnum: int, crawlers: [List[str]] = ['GOOGL
         print("Max num limited to 1000")
         maxnum = 1000
 
+    crawler_init_defaults = {
+        'downloader_cls': CustomDownloader,
+        'log_level': logging.CRITICAL,
+        'feeder_threads': 1,
+        'parser_threads': 1,
+        'downloader_threads': 4,
+        'storage': {'root_dir': folder}
+    }
+    crawling_defaults = {
+        'offset': 0,
+        'max_num': maxnum,
+        'min_size': min_size,
+        'max_size': None,
+        'file_idx_offset': 'auto'
+    }
+
     for c in crawlers:
         print(f'    -> {c}')
-        if c == 'GOOGLE':
-            google_crawler = GoogleImageCrawler(
-                downloader_cls=CustomDownloader,
-                log_level=logging.CRITICAL,
-                feeder_threads=1,
-                parser_threads=1,
-                downloader_threads=4,
-                storage={'root_dir': folder})
 
-            google_crawler.crawl(keyword=search, offset=0, max_num=maxnum,
-                                 min_size=(200, 200), max_size=None, file_idx_offset=0)
+        if c == 'GOOGLE':
+            google_crawler = GoogleImageCrawler(**crawler_init_defaults)
+            google_crawler.crawl(keyword=search, **crawling_defaults)
 
         if c == 'BING':
-            bing_crawler = BingImageCrawler(downloader_cls=CustomDownloader,
-                                            log_level=logging.CRITICAL,
-                                            downloader_threads=4,
-                                            storage={'root_dir': folder})
+            bing_crawler = BingImageCrawler(**crawler_init_defaults)
             bing_crawler.crawl(keyword=search, filters=None,
-                               offset=0, max_num=maxnum, file_idx_offset='auto')
+                               **crawling_defaults)
 
         if c == 'BAIDU':
-            baidu_crawler = BaiduImageCrawler(downloader_cls=CustomDownloader,
-                                              log_level=logging.CRITICAL,
-                                              storage={'root_dir': folder})
-            baidu_crawler.crawl(keyword=search, offset=0, max_num=maxnum,
-                                min_size=(200, 200), max_size=None, file_idx_offset='auto')
+            baidu_crawler = BaiduImageCrawler(**crawler_init_defaults)
+            baidu_crawler.crawl(keyword=search, **crawling_defaults)
 
         if c == 'FLICKR':
-            flick_api_key = os.environ.get('FLICKR_API_KEY')
-            if not flick_api_key:
+            flickr_api_key = os.environ.get('FLICKR_API_KEY')
+            if not flickr_api_key:
                 print(
                     'Error: Flickr crawler requires FLICKR_API_KEY environment variable to be set with your non-secret API key.')
                 exit(-1)
 
             flickr_crawler = FlickrImageCrawler(
-                flick_api_key, downloader_cls=CustomDownloader, log_level=logging.CRITICAL, storage={'root_dir': folder})
-            flickr_crawler.crawl(text=search, offset=0, max_num=maxnum, min_size=(
-                200, 200), max_size=None, file_idx_offset='auto')
+                flickr_api_key, **crawler_init_defaults)
+            flickr_crawler.crawl(text=search, **crawling_defaults)
 
     return {k: v for k, v in CustomDownloader.registry.items() if k is not None}
 
 
 def main(infile: str, size: int, crawler: List[str], keep: bool, maxnum: int, outpath: str):
-    SIZE = (size, size)
+    final_size = (size, size)
     classes = []
 
     if 'ALL' in crawler:
@@ -136,8 +138,8 @@ def main(infile: str, size: int, crawler: List[str], keep: bool, maxnum: int, ou
             out_name = sanitize_searchstring(search_term, rstring=remove_terms)
             raw_folder = os.path.join(tmp, out_name)
 
-            source_urls = crawl(raw_folder, search_term,
-                                maxnum, crawlers=crawler)
+            source_urls = crawl(folder=raw_folder, search=search_term,
+                                maxnum=maxnum, crawlers=crawler, min_size=final_size)
             remove_dups(raw_folder)
 
             # resize
@@ -147,7 +149,7 @@ def main(infile: str, size: int, crawler: List[str], keep: bool, maxnum: int, ou
             files = sorted(glob.glob(raw_folder+'/*'))
 
             source_urls = resize(files, outpath=out_resized,
-                                 size=SIZE, urls=source_urls)
+                                 size=final_size, urls=source_urls)
 
             # write report file
             with open(out_resized + '.log', 'w', encoding="utf-8") as log:
