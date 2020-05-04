@@ -110,7 +110,7 @@ def crawl(
 
 
 def main(
-    infile: str, size: int, crawler: List[str], keep: bool, maxnum: int, outpath: str
+    infile: str, size: int, crawler: List[str], keep: bool, maxnum: int, outpath: str, padding: bool
 ):
     final_size = (size, size)
     classes = []
@@ -159,6 +159,8 @@ def main(
                 crawlers=crawler,
                 min_size=final_size,
             )
+
+            # M: looks like dupe detection is only done per folder (search query). Prob better to do it for all images downloaded. But then the question is which folder/query gets to keep the one copy.
             remove_dups(raw_folder)
 
             # resize
@@ -168,7 +170,7 @@ def main(
             files = sorted(glob.glob(raw_folder + "/*"))
 
             source_urls = resize(
-                files, outpath=out_resized, size=final_size, urls=source_urls
+                files, outpath=out_resized, size=final_size, urls=source_urls, padding=padding
             )
 
             # write report file
@@ -226,9 +228,17 @@ click.Context.get_usage = click.Context.get_help
     show_default=True,
     help="name of output directory",
 )
+@click.option(
+    "-p",
+    "--padding",
+    default=True,
+    is_flag=True,
+    show_default=True,
+    help="add white padding to make rectangular images square. Only applicable when resizing.",
+)
 @click.argument("infile", type=click.File("r"), required=True)
-def cli(infile, size, crawler, keep, maxnum, outpath):
-    main(infile, size, crawler, keep, maxnum, outpath)
+def cli(infile, size, crawler, keep, maxnum, outpath, padding):
+    main(infile, size, crawler, keep, maxnum, outpath, padding)
 
 
 if __name__ == "__main__":
